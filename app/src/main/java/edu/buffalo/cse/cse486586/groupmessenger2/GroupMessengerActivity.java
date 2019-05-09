@@ -73,7 +73,7 @@ public class GroupMessengerActivity extends Activity {
     private static PriorityQueue<Msg> finalq = new PriorityQueue<Msg>(); //Delivery Queue of Confirmed messages to deliver
     Uri providerUri = Uri.parse("content://edu.buffalo.cse.cse486586.groupmessenger2.provider");
 
-    private class Msg implements Comparable <Msg>{ //Will be later used to create an datatypes of Msg Type
+    private class Msg implements Comparable <Msg> { //Will be later used to create an datatypes of Msg Type
         private String msg;
         private float msgSeq;
         private boolean isFinalized = false;
@@ -298,78 +298,75 @@ public class GroupMessengerActivity extends Activity {
                             Log.d(TAG, "Server: " +myPort+ " Sent Proposal: " +msgToSend+ " to avd "+pieces[3]);
                         }
 
-                        else
+                        else if (pieces[0].equals(RP)) // Incoming message is a Proposal
                         {
-                            if (pieces[0].equals(RP)) // Incoming message is a Proposal
+                            Log.d(TAG, "Server: " +myPort+ " Message: " +msgFromClient+ " from avd "+pieces[3]+"is a Proposal");
+                            List <Float> sequences = s_buff.get(pieces[2]);
+
+                            if (sequences == null) // First Proposal
+                            {    // https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ConcurrentHashMap.html
+                                sequences = new ArrayList<Float>();
+                                sequences.add(Float.parseFloat(pieces[1]));
+                                s_buff.put(pieces[2], sequences);
+                            }
+
+                            else
                             {
-                                Log.d(TAG, "Server: " +myPort+ " Message: " +msgFromClient+ " from avd "+pieces[3]+"is a Proposal");
-                                List <Float> sequences = s_buff.get(pieces[2]);
+                                sequences.add(Float.parseFloat(pieces[1]));
+                            }
 
-                                if (sequences == null) // First Proposal
-                                {    // https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ConcurrentHashMap.html
-                                    sequences = new ArrayList<Float>();
-                                    sequences.add(Float.parseFloat(pieces[1]));
-                                    s_buff.put(pieces[2], sequences);
-                                }
+                            String currentKey = pieces[2];
+                            List <Float> sequenceList = s_buff.get(currentKey);
+                            if (sequenceList.size() >= no_of_avds)
+                            {
+                                Float max = Collections.max(sequenceList); //Fetching Max Sequence Number from all proposals
+                                Log.d(TAG, "Server: " +myPort+ " Max Generated for Msg " +msgFromClient);
+                                msgToSend = F + ";" + max.toString() + ";" + pieces[2] + ";" + pieces[3];
+                                sendMsgCT(msgToSend);
+                                Log.d(TAG, "Server: " +myPort+ " Sent Final Msg: " +msgToSend+" to all avds");
+                                s_buff.remove(currentKey);
+                            }
+                        }
 
-                                else
-                                {
-                                    sequences.add(Float.parseFloat(pieces[1]));
-                                }
+                        else //Incoming message is a declaration of a final sequence (pieces[0].equals(F))
+                        {
+                            Log.d(TAG, "Server: " + myPort + " Message: " + msgFromClient + " from avd " + pieces[3] + " is a Final Message");
 
-                                String currentKey = pieces[2];
-                                List <Float> sequenceList = s_buff.get(currentKey);
-                                if (sequenceList.size() >= no_of_avds)
-                                {
-                                    Float max = Collections.max(sequenceList); //Fetching Max Sequence Number from all proposals
-                                    Log.d(TAG, "Server: " +myPort+ " Max Generated for Msg " +msgFromClient);
-                                    msgToSend = F + ";" + max.toString() + ";" + pieces[2] + ";" + pieces[3];
-                                    sendMsgCT(msgToSend);
-                                    Log.d(TAG, "Server: " +myPort+ " Sent Final Msg: " +msgToSend+" to all avds");
-                                    s_buff.remove(currentKey);
+                            for (Msg m : dqueue) {
+                                if (m.getMsg().equals(pieces[2])) {
+                                    Log.d(TAG, "Server: " + myPort + " Message " + m.getMsg() + " located in Holdback Queue");
+                                    dqueue.remove(m);
+                                    Log.d(TAG, "Server: " + myPort + " Removed Msg " + m.toString());
+                                    break;
                                 }
                             }
 
-                            else //Incoming message is a declaration of a final sequence (pieces[0].equals(F))
+                            Msg m = new Msg();
+                            m.setMsgSeq(Float.parseFloat(pieces[1])); //Suggested Sequence Number
+                            m.setMsg(pieces[2]); //Msg Content
+                            m.setFromAvd(pieces[3]); // Sender's Port from where Msg Originated
+                            m.setFinalized(true);
+                            dqueue.add(m);
+
+                            Log.d(TAG, "Server: " + myPort + " Current Holdback Queue " + dqueue.toString());
+
+                            while (!dqueue.isEmpty()) {
+                                Msg p = dqueue.peek();
+
+                                if (!p.IsFinalized()) {
+                                    Log.d(TAG, "Awaiting Final Sequence No. for " + p.getMsg());
+                                    break;
+                                }
+
+                                finalq.add(p);
+                                dqueue.remove(p);
+                            }
+
+                            while (!finalq.isEmpty()) //All messages in finalq are deliverable
                             {
-                                Log.d(TAG, "Server: " + myPort + " Message: " + msgFromClient + " from avd " + pieces[3] + " is a Final Message");
-
-                                for (Msg m : dqueue) {
-                                    if (m.getMsg().equals(pieces[2])) {
-                                        Log.d(TAG, "Server: " + myPort + " Message " + m.getMsg() + " located in Holdback Queue");
-                                        dqueue.remove(m);
-                                        Log.d(TAG, "Server: " + myPort + " Removed Msg " + m.toString());
-                                        break;
-                                    }
-                                }
-
-                                Msg m = new Msg();
-                                m.setMsgSeq(Float.parseFloat(pieces[1])); //Suggested Sequence Number
-                                m.setMsg(pieces[2]); //Msg Content
-                                m.setFromAvd(pieces[3]); // Sender's Port from where Msg Originated
-                                m.setFinalized(true);
-                                dqueue.add(m);
-
-                                Log.d(TAG, "Server: " + myPort + " Current Holdback Queue " + dqueue.toString());
-
-                                while (!dqueue.isEmpty()) {
-                                    Msg p = dqueue.peek();
-
-                                    if (!p.IsFinalized()) {
-                                        Log.d(TAG, "Awaiting Final Sequence No. for " + p.getMsg());
-                                        break;
-                                    }
-
-                                    finalq.add(p);
-                                    dqueue.remove(p);
-                                }
-
-                                while (!finalq.isEmpty()) //All messages in finalq are deliverable
-                                {
-                                    Msg p = finalq.poll();
-                                    publishProgress(p.getMsg());
-                                    Log.d(TAG, "Server: " + myPort + " Delivered Message " + p.getMsg());
-                                }
+                                Msg p = finalq.poll();
+                                publishProgress(p.getMsg());
+                                Log.d(TAG, "Server: " + myPort + " Delivered Message " + p.getMsg());
                             }
                         }
                     }
@@ -410,7 +407,6 @@ public class GroupMessengerActivity extends Activity {
                 }
             }
         }
-
 
         protected void onProgressUpdate(String... strings)
         {
@@ -511,11 +507,11 @@ public class GroupMessengerActivity extends Activity {
                     }
 
                     finally {
-
-                        try {
-                                ip.close();
-                                client.close();
-                            }
+                        try
+                        {
+                            ip.close();
+                            client.close();
+                        }
 
                         catch(Exception e)
                         {
@@ -523,12 +519,10 @@ public class GroupMessengerActivity extends Activity {
                             e.printStackTrace();
                         }
                     }
-
                 }
 
             return null;
         }
-
     }
 
     @Override
